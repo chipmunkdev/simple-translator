@@ -233,7 +233,7 @@ let busy = false;
 let finalTranscript = '';
 let activeLang = '';
 const statusTimers = { zh: null, en: null };
-let voicesCache = [];
+const ttsAudio = new Audio();
 
 /* ─────────────── UI helpers ─────────────── */
 function setDot(lang, state) {
@@ -276,29 +276,23 @@ async function doTranslate(text, fromLang) {
 }
 
 /* ─────────────── TTS ─────────────── */
-function cacheVoices() {
-  voicesCache = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-}
+// speechSynthesis requires a synchronous user gesture on Chrome and all iOS
+// browsers — it silently fails when called after an async translation fetch.
+// Solution: use an <audio> element with the Google TTS URL instead.
+// The element is activated during the button press (user gesture), so later
+// async .play() calls are permitted on all platforms.
+const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 
-function getVoice(toLang) {
-  const prefix  = toLang === 'zh' ? 'zh' : 'en';
-  const exact   = toLang === 'zh' ? 'zh-CN' : 'en-US';
-  return voicesCache.find(v => v.lang === exact)
-      || voicesCache.find(v => v.lang.toLowerCase().startsWith(prefix + '-'))
-      || voicesCache.find(v => v.lang.toLowerCase().startsWith(prefix))
-      || null;
+function activateAudio() {
+  ttsAudio.src = SILENT;
+  ttsAudio.play().catch(() => {});
 }
 
 function speak(text, toLang) {
-  if (!window.speechSynthesis || !text) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  const voice = getVoice(toLang);
-  u.lang = voice ? voice.lang : (toLang === 'zh' ? 'zh-CN' : 'en-US');
-  if (voice) u.voice = voice;
-  u.rate  = 0.88;
-  u.pitch = 1;
-  window.speechSynthesis.speak(u);
+  const lang = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  ttsAudio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q='
+    + encodeURIComponent(text) + '&tl=' + lang + '&client=tw-ob';
+  ttsAudio.play().catch(() => {});
 }
 
 /* ─────────────── Recording ─────────────── */
@@ -313,7 +307,7 @@ function startRec(lang, e) {
   busy = true;
   activeLang = lang;
   finalTranscript = '';
-  window.speechSynthesis.cancel();
+  activateAudio();
 
   clearZone(lang === 'zh' ? 'en' : 'zh');
 
@@ -395,10 +389,6 @@ async function stopRec(lang, e) {
 
 document.addEventListener('contextmenu', e => e.preventDefault());
 
-if (window.speechSynthesis) {
-  cacheVoices();
-  window.speechSynthesis.onvoiceschanged = cacheVoices;
-}
 </script>
 
 </body>
