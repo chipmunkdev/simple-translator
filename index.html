@@ -342,7 +342,7 @@ function startRec(lang, e) {
 
 async function stopRec(lang, e) {
   if (e) e.preventDefault();
-  if (!busy) return;
+  if (!busy) { showToast('DEBUG: not busy'); return; }
 
   const btn = document.getElementById('btn-' + lang);
   btn.classList.remove('active');
@@ -352,13 +352,16 @@ async function stopRec(lang, e) {
   const spokenText = finalTranscript.trim() || document.getElementById('heard-' + lang).textContent.trim();
 
   if (!spokenText) {
+    showToast('DEBUG: no text captured');
     setDot(lang, '');
     busy = false;
     return;
   }
 
+  showToast('DEBUG: got text: ' + spokenText.slice(0, 30));
   setDot(lang, 'translating');
   const translated = await doTranslate(spokenText, lang);
+  showToast('DEBUG: translated: ' + translated.slice(0, 30));
   document.getElementById('result-' + lang).textContent = translated;
 
   setDot(lang, 'speaking');
