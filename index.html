@@ -272,21 +272,34 @@ async function doTranslate(text, fromLang) {
 }
 
 /* ─────────────── TTS ─────────────── */
-// Use <audio> + Google TTS URL instead of speechSynthesis.
-// On iOS, an <audio> element unlocked during a user gesture (touchstart)
-// can play audio later even after async operations.
+// iOS blocks speechSynthesis after async operations, so we use an <audio>
+// element with the Google TTS URL instead. The element must be "unlocked"
+// during a user gesture (touchstart) with a silent audio payload so that
+// later async .play() calls are allowed.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 const ttsAudio = new Audio();
 
 function unlockAudio() {
-  // Must be called synchronously within a user gesture to unlock on iOS.
+  if (!isIOS) return;
+  ttsAudio.src = SILENT_WAV;
   ttsAudio.play().catch(() => {});
 }
 
 function speak(text, toLang) {
   const lang = toLang === 'zh' ? 'zh-CN' : 'en-US';
-  ttsAudio.src = 'https://translate.googleapis.com/translate_tts?ie=UTF-8&q='
-    + encodeURIComponent(text) + '&tl=' + lang + '&client=gtx&ttsspeed=0.8';
-  ttsAudio.play().catch(() => {});
+  if (isIOS) {
+    ttsAudio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q='
+      + encodeURIComponent(text) + '&tl=' + lang + '&client=tw-ob';
+    ttsAudio.play().catch(() => {});
+  } else {
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang  = lang;
+    u.rate  = 0.88;
+    u.pitch = 1;
+    window.speechSynthesis.speak(u);
+  }
 }
 
 /* ─────────────── Recording ─────────────── */
