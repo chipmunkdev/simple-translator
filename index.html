@@ -232,10 +232,12 @@ let rec = null;
 let busy = false;
 let finalTranscript = '';
 
-// Chrome has a bug where speechSynthesis silently stops working after ~15s.
-// Periodically resuming it keeps it alive.
+// Chrome has a bug where speechSynthesis silently pauses after ~15s.
+// Only resume if it's actually paused, to avoid interrupting active speech.
 if (window.speechSynthesis) {
-  setInterval(() => { window.speechSynthesis.resume(); }, 10000);
+  setInterval(() => {
+    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+  }, 10000);
 }
 
 /* ─────────────── UI helpers ─────────────── */
