@@ -344,8 +344,8 @@ function startRec(lang, e) {
     stopRec(lang, null);
   };
 
-  // iOS Safari often auto-stops recognition — treat it as button release
-  rec.onend = () => { stopRec(lang, null); };
+  // iOS auto-stops recognition before the user releases — treat it as button release
+  if (isIOS) rec.onend = () => { stopRec(lang, null); };
 
   try { rec.start(); }
   catch (err) { console.error(err); busy = false; btn.classList.remove('active'); setDot(lang,''); }
