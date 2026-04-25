@@ -232,7 +232,6 @@ let rec = null;
 let busy = false;
 let finalTranscript = '';
 
-
 /* ─────────────── UI helpers ─────────────── */
 function setDot(lang, state) {
   const dot = document.getElementById('dot-' + lang);
@@ -273,34 +272,24 @@ async function doTranslate(text, fromLang) {
 }
 
 /* ─────────────── TTS ─────────────── */
-// iOS blocks speechSynthesis after async operations, so we use an <audio>
-// element with the Google TTS URL instead. The element must be "unlocked"
-// during a user gesture (touchstart) with a silent audio payload so that
-// later async .play() calls are allowed.
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-const ttsAudio = new Audio();
-
-function unlockAudio() {
-  if (!isIOS) return;
-  ttsAudio.src = SILENT_WAV;
-  ttsAudio.play().catch(() => {});
+// iOS requires speechSynthesis to be triggered within a user gesture.
+// We prime it with a silent utterance on button press so the later
+// async speak (after translation fetch) is allowed.
+function unlockSpeech() {
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance('');
+  u.volume = 0;
+  window.speechSynthesis.speak(u);
 }
 
 function speak(text, toLang) {
-  const lang = toLang === 'zh' ? 'zh-CN' : 'en-US';
-  if (isIOS) {
-    ttsAudio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q='
-      + encodeURIComponent(text) + '&tl=' + lang + '&client=tw-ob';
-    ttsAudio.play().catch(() => {});
-  } else {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang  = lang;
-    u.rate  = 0.88;
-    u.pitch = 1;
-    window.speechSynthesis.speak(u);
-  }
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang  = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  u.rate  = 0.88;
+  u.pitch = 1;
+  window.speechSynthesis.speak(u);
 }
 
 /* ─────────────── Recording ─────────────── */
@@ -314,7 +303,8 @@ function startRec(lang, e) {
 
   busy = true;
   finalTranscript = '';
-  unlockAudio();
+  unlockSpeech();
+  window.speechSynthesis.cancel();
 
   clearZone(lang === 'zh' ? 'en' : 'zh');
 
@@ -344,9 +334,6 @@ function startRec(lang, e) {
     stopRec(lang, null);
   };
 
-  // iOS auto-stops recognition before the user releases — treat it as button release
-  if (isIOS) rec.onend = () => { stopRec(lang, null); };
-
   try { rec.start(); }
   catch (err) { console.error(err); busy = false; btn.classList.remove('active'); setDot(lang,''); }
 }
@@ -354,7 +341,6 @@ function startRec(lang, e) {
 async function stopRec(lang, e) {
   if (e) e.preventDefault();
   if (!busy) return;
-  busy = false; // reset immediately so double-calls and errors never leave it stuck
 
   const btn = document.getElementById('btn-' + lang);
   btn.classList.remove('active');
@@ -363,19 +349,21 @@ async function stopRec(lang, e) {
 
   const spokenText = finalTranscript.trim() || document.getElementById('heard-' + lang).textContent.trim();
 
-  if (!spokenText) { setDot(lang, ''); return; }
-
-  try {
-    setDot(lang, 'translating');
-    const translated = await doTranslate(spokenText, lang);
-    document.getElementById('result-' + lang).textContent = translated;
-
-    setDot(lang, 'speaking');
-    speak(translated, lang === 'zh' ? 'en' : 'zh');
-    setTimeout(() => setDot(lang, ''), 4000);
-  } catch(_) {
+  if (!spokenText) {
     setDot(lang, '');
+    busy = false;
+    return;
   }
+
+  setDot(lang, 'translating');
+  const translated = await doTranslate(spokenText, lang);
+  document.getElementById('result-' + lang).textContent = translated;
+
+  setDot(lang, 'speaking');
+  speak(translated, lang === 'zh' ? 'en' : 'zh');
+
+  setTimeout(() => setDot(lang, ''), 4000);
+  busy = false;
 }
 
 /* ─────────────── Bind events ─────────────── */
