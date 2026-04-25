@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>翻译 / Translate</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  background: #111;
+}
+
+/* ── Zones ── */
+.zone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32px 28px 24px;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.zone-zh { background: linear-gradient(160deg, #8B1111 0%, #5A0A0A 100%); }
+.zone-en { background: linear-gradient(160deg, #0C2F4A 0%, #061C2D 100%); }
+
+/* subtle texture */
+.zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.07) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+/* ── Header ── */
+.zone-header { text-align: center; position: relative; z-index: 1; }
+.zone-lang   { font-size: 32px; font-weight: 700; color: #fff; letter-spacing: -0.01em; }
+.zone-arrow  { font-size: 16px; color: rgba(255,255,255,0.45); margin-top: 3px; letter-spacing: 0.08em; }
+
+/* ── Hold Button ── */
+.btn-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; position: relative; z-index: 1; }
+
+.hold-btn {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.28);
+  background: rgba(255,255,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  outline: none;
+  touch-action: none;
+  transition: transform 0.13s ease, background 0.13s ease, border-color 0.13s ease, box-shadow 0.13s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.hold-btn svg { width: 56px; height: 56px; fill: white; transition: transform 0.13s; }
+
+.hold-btn:active,
+.hold-btn.active {
+  background: rgba(255,255,255,0.25);
+  border-color: rgba(255,255,255,0.85);
+  transform: scale(1.09);
+  box-shadow: 0 0 0 14px rgba(255,255,255,0.08), 0 0 0 30px rgba(255,255,255,0.04);
+}
+.hold-btn.active svg { transform: scale(1.05); }
+
+.btn-hint {
+  text-align: center;
+  line-height: 1.5;
+}
+.btn-hint .primary { font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.75); }
+.btn-hint .secondary { font-size: 12px; color: rgba(255,255,255,0.38); margin-top: 1px; }
+
+/* ── Output Area ── */
+.output-area {
+  width: 100%;
+  text-align: center;
+  min-height: 72px;
+  position: relative;
+  z-index: 1;
+}
+.heard-text {
+  font-size: 14px;
+  color: rgba(255,255,255,0.42);
+  font-style: italic;
+  min-height: 20px;
+  transition: opacity 0.3s;
+  line-height: 1.4;
+}
+.result-text {
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  margin-top: 6px;
+  min-height: 32px;
+  line-height: 1.35;
+  transition: opacity 0.3s;
+}
+
+/* ── Status indicator ── */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 20px;
+}
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.22);
+  transition: background 0.3s;
+  flex-shrink: 0;
+}
+.status-dot.listening   { background: #FF6B6B; animation: pulse 0.9s infinite; }
+.status-dot.translating { background: #FFD166; animation: pulse 0.5s infinite; }
+.status-dot.speaking    { background: #06D6A0; animation: pulse 0.7s infinite; }
+
+.status-label {
+  font-size: 13px;
+  color: rgba(255,255,255,0.45);
+  min-width: 80px;
+  text-align: left;
+}
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+/* ── Divider ── */
+.divider { height: 1px; background: rgba(255,255,255,0.12); flex-shrink: 0; }
+
+/* ── Error Toast ── */
+.toast {
+  position: fixed;
+  bottom: 50%;
+  left: 50%;
+  transform: translateX(-50%) translateY(50%);
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  padding: 14px 22px;
+  border-radius: 12px;
+  font-size: 14px;
+  text-align: center;
+  line-height: 1.5;
+  z-index: 999;
+  max-width: 80vw;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ── Chinese Zone (top) ── -->
+<div class="zone zone-zh">
+  <div class="zone-header">
+    <div class="zone-lang">中文</div>
+    <div class="zone-arrow">▼ English</div>
+  </div>
+
+  <div class="btn-wrap">
+    <button class="hold-btn" id="btn-zh">
+      <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm7 9v2a7 7 0 0 1-14 0v-2H3v2a9 9 0 0 0 8 8.94V23H8v2h8v-2h-3v-2.06A9 9 0 0 0 21 12v-2h-2z"/></svg>
+    </button>
+    <div class="btn-hint">
+      <div class="primary">按住说话</div>
+      <div class="secondary">Hold to speak Chinese</div>
+    </div>
+  </div>
+
+  <div class="output-area">
+    <div class="status-row">
+      <div class="status-dot" id="dot-zh"></div>
+      <div class="status-label" id="status-zh"></div>
+    </div>
+    <div class="heard-text"  id="heard-zh"></div>
+    <div class="result-text" id="result-zh"></div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ── English Zone (bottom) ── -->
+<div class="zone zone-en">
+  <div class="zone-header">
+    <div class="zone-lang">English</div>
+    <div class="zone-arrow">▼ 中文</div>
+  </div>
+
+  <div class="btn-wrap">
+    <button class="hold-btn" id="btn-en">
+      <svg viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zm7 9v2a7 7 0 0 1-14 0v-2H3v2a9 9 0 0 0 8 8.94V23H8v2h8v-2h-3v-2.06A9 9 0 0 0 21 12v-2h-2z"/></svg>
+    </button>
+    <div class="btn-hint">
+      <div class="primary">Hold to speak</div>
+      <div class="secondary">按住说英文</div>
+    </div>
+  </div>
+
+  <div class="output-area">
+    <div class="status-row">
+      <div class="status-dot" id="dot-en"></div>
+      <div class="status-label" id="status-en"></div>
+    </div>
+    <div class="heard-text"  id="heard-en"></div>
+    <div class="result-text" id="result-en"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ─────────────── State ─────────────── */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+let busy = false;
+let finalTranscript = '';
+
+/* ─────────────── UI helpers ─────────────── */
+function setDot(lang, state) {
+  const dot = document.getElementById('dot-' + lang);
+  const lbl = document.getElementById('status-' + lang);
+  dot.className = 'status-dot ' + state;
+  const labels = {
+    zh: { listening:'正在听...', translating:'翻译中...', speaking:'播放中...', '':'' },
+    en: { listening:'Listening…', translating:'Translating…', speaking:'Speaking…', '':'' }
+  };
+  lbl.textContent = labels[lang][state] || '';
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+function clearZone(lang) {
+  document.getElementById('heard-'  + lang).textContent = '';
+  document.getElementById('result-' + lang).textContent = '';
+  setDot(lang, '');
+}
+
+/* ─────────────── Translation ─────────────── */
+async function doTranslate(text, fromLang) {
+  const sl = fromLang === 'zh' ? 'zh-CN' : 'en';
+  const tl = fromLang === 'zh' ? 'en' : 'zh-CN';
+  const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + sl + '&tl=' + tl + '&dt=t&q=' + encodeURIComponent(text);
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    return d[0].map(s => s[0]).join('');
+  } catch (e) {
+    return fromLang === 'zh' ? '(无网络)' : '(no internet)';
+  }
+}
+
+/* ─────────────── TTS ─────────────── */
+// iOS requires speechSynthesis to be triggered within a user gesture.
+// We prime it with a silent utterance on button press so the later
+// async speak (after translation fetch) is allowed.
+function unlockSpeech() {
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance('');
+  u.volume = 0;
+  window.speechSynthesis.speak(u);
+}
+
+function speak(text, toLang) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang  = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  u.rate  = 0.88;
+  u.pitch = 1;
+  window.speechSynthesis.speak(u);
+}
+
+/* ─────────────── Recording ─────────────── */
+function startRec(lang, e) {
+  if (e) e.preventDefault();
+  if (busy) return;
+  if (!SR) {
+    showToast('请用 Chrome 浏览器打开\nPlease open in Chrome browser');
+    return;
+  }
+
+  busy = true;
+  finalTranscript = '';
+  unlockSpeech();
+  window.speechSynthesis.cancel();
+
+  clearZone(lang === 'zh' ? 'en' : 'zh');
+
+  const btn = document.getElementById('btn-' + lang);
+  btn.classList.add('active');
+  setDot(lang, 'listening');
+
+  rec = new SR();
+  rec.lang = lang === 'zh' ? 'zh-CN' : 'en-US';
+  rec.continuous     = true;
+  rec.interimResults = true;
+
+  rec.onresult = (ev) => {
+    let interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) finalTranscript += t;
+      else interim += t;
+    }
+    document.getElementById('heard-' + lang).textContent = finalTranscript + interim;
+  };
+
+  rec.onerror = (ev) => {
+    if (ev.error === 'not-allowed') {
+      showToast('请允许麦克风权限\nPlease allow microphone access');
+    }
+    stopRec(lang, null);
+  };
+
+  try { rec.start(); }
+  catch (err) { console.error(err); busy = false; btn.classList.remove('active'); setDot(lang,''); }
+}
+
+async function stopRec(lang, e) {
+  if (e) e.preventDefault();
+  if (!busy) return;
+
+  const btn = document.getElementById('btn-' + lang);
+  btn.classList.remove('active');
+
+  if (rec) { try { rec.stop(); } catch(_){} rec = null; }
+
+  const spokenText = finalTranscript.trim() || document.getElementById('heard-' + lang).textContent.trim();
+
+  if (!spokenText) {
+    setDot(lang, '');
+    busy = false;
+    return;
+  }
+
+  setDot(lang, 'translating');
+  const translated = await doTranslate(spokenText, lang);
+  document.getElementById('result-' + lang).textContent = translated;
+
+  setDot(lang, 'speaking');
+  speak(translated, lang === 'zh' ? 'en' : 'zh');
+
+  setTimeout(() => setDot(lang, ''), 4000);
+  busy = false;
+}
+
+/* ─────────────── Bind events ─────────────── */
+['zh', 'en'].forEach(lang => {
+  const btn = document.getElementById('btn-' + lang);
+
+  btn.addEventListener('touchstart', e => startRec(lang, e), { passive: false });
+  btn.addEventListener('touchend',   e => stopRec(lang, e),  { passive: false });
+  btn.addEventListener('touchcancel',e => stopRec(lang, e),  { passive: false });
+
+  btn.addEventListener('mousedown',  e => startRec(lang, e));
+  btn.addEventListener('mouseup',    e => stopRec(lang, e));
+  btn.addEventListener('mouseleave', e => stopRec(lang, e));
+});
+
+/* prevent long-press context menu on mobile */
+document.addEventListener('contextmenu', e => e.preventDefault());
+</script>
+
+</body>
+</html>
