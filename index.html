@@ -272,24 +272,21 @@ async function doTranslate(text, fromLang) {
 }
 
 /* ─────────────── TTS ─────────────── */
-// iOS requires speechSynthesis to be triggered within a user gesture.
-// We prime it with a silent utterance on button press so the later
-// async speak (after translation fetch) is allowed.
-function unlockSpeech() {
-  if (!window.speechSynthesis) return;
-  const u = new SpeechSynthesisUtterance('');
-  u.volume = 0;
-  window.speechSynthesis.speak(u);
+// Use <audio> + Google TTS URL instead of speechSynthesis.
+// On iOS, an <audio> element unlocked during a user gesture (touchstart)
+// can play audio later even after async operations.
+const ttsAudio = new Audio();
+
+function unlockAudio() {
+  // Must be called synchronously within a user gesture to unlock on iOS.
+  ttsAudio.play().catch(() => {});
 }
 
 function speak(text, toLang) {
-  if (!window.speechSynthesis) return;
-  window.speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang  = toLang === 'zh' ? 'zh-CN' : 'en-US';
-  u.rate  = 0.88;
-  u.pitch = 1;
-  window.speechSynthesis.speak(u);
+  const lang = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  ttsAudio.src = 'https://translate.googleapis.com/translate_tts?ie=UTF-8&q='
+    + encodeURIComponent(text) + '&tl=' + lang + '&client=gtx&ttsspeed=0.8';
+  ttsAudio.play().catch(() => {});
 }
 
 /* ─────────────── Recording ─────────────── */
@@ -303,7 +300,7 @@ function startRec(lang, e) {
 
   busy = true;
   finalTranscript = '';
-  unlockSpeech();
+  unlockAudio();
 
   clearZone(lang === 'zh' ? 'en' : 'zh');
 
@@ -342,7 +339,7 @@ function startRec(lang, e) {
 
 async function stopRec(lang, e) {
   if (e) e.preventDefault();
-  if (!busy) { showToast('DEBUG: not busy'); return; }
+  if (!busy) return;
 
   const btn = document.getElementById('btn-' + lang);
   btn.classList.remove('active');
@@ -352,16 +349,13 @@ async function stopRec(lang, e) {
   const spokenText = finalTranscript.trim() || document.getElementById('heard-' + lang).textContent.trim();
 
   if (!spokenText) {
-    showToast('DEBUG: no text captured');
     setDot(lang, '');
     busy = false;
     return;
   }
 
-  showToast('DEBUG: got text: ' + spokenText.slice(0, 30));
   setDot(lang, 'translating');
   const translated = await doTranslate(spokenText, lang);
-  showToast('DEBUG: translated: ' + translated.slice(0, 30));
   document.getElementById('result-' + lang).textContent = translated;
 
   setDot(lang, 'speaking');
