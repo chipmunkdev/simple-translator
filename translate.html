@@ -304,7 +304,6 @@ function startRec(lang, e) {
   busy = true;
   finalTranscript = '';
   unlockSpeech();
-  window.speechSynthesis.cancel();
 
   clearZone(lang === 'zh' ? 'en' : 'zh');
 
