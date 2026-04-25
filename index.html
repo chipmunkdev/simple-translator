@@ -226,107 +226,74 @@ body {
 <div class="toast" id="toast"></div>
 
 <script>
-const SR    = window.SpeechRecognition || window.webkitSpeechRecognition;
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+/* ─────────────── State ─────────────── */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+let busy = false;
+let finalTranscript = '';
 
-let rec        = null;
-let busy       = false;
-let transcript = '';
-
-/* ── UI ── */
+/* ─────────────── UI helpers ─────────────── */
 function setDot(lang, state) {
-  document.getElementById('dot-' + lang).className = 'status-dot ' + state;
-  document.getElementById('status-' + lang).textContent = {
+  const dot = document.getElementById('dot-' + lang);
+  const lbl = document.getElementById('status-' + lang);
+  dot.className = 'status-dot ' + state;
+  const labels = {
     zh: { listening:'正在听...', translating:'翻译中...', speaking:'播放中...', '':'' },
     en: { listening:'Listening…', translating:'Translating…', speaking:'Speaking…', '':'' }
-  }[lang][state] || '';
+  };
+  lbl.textContent = labels[lang][state] || '';
 }
+
 function showToast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
+  t.textContent = msg;
+  t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 4000);
 }
+
 function clearZone(lang) {
-  document.getElementById('heard-' + lang).textContent = '';
+  document.getElementById('heard-'  + lang).textContent = '';
   document.getElementById('result-' + lang).textContent = '';
   setDot(lang, '');
 }
 
-/* ── Translation ── */
-async function doTranslate(text, from) {
-  const sl = from === 'zh' ? 'zh-CN' : 'en';
-  const tl = from === 'zh' ? 'en'    : 'zh-CN';
+/* ─────────────── Translation ─────────────── */
+async function doTranslate(text, fromLang) {
+  const sl = fromLang === 'zh' ? 'zh-CN' : 'en';
+  const tl = fromLang === 'zh' ? 'en' : 'zh-CN';
   const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' + sl + '&tl=' + tl + '&dt=t&q=' + encodeURIComponent(text);
   try {
-    const d = await (await fetch(url)).json();
-    return d[0].filter(s => s && s[0]).map(s => s[0]).join('');
-  } catch (_) {
-    return from === 'zh' ? '(无网络)' : '(no internet)';
+    const r = await fetch(url);
+    const d = await r.json();
+    return d[0].map(s => s[0]).join('');
+  } catch (e) {
+    return fromLang === 'zh' ? '(无网络)' : '(no internet)';
   }
 }
 
-/* ── TTS ──
-   Desktop : speechSynthesis (works fine, no gesture restriction)
-   iOS     : <audio> + Google TTS URL
-             The audio element must be activated during a touchstart gesture;
-             after that it can play freely even after async operations.        */
-const ttsAudio = new Audio();
-
-function activateAudio() {
-  // Called during touchstart. Plays a silent clip to unlock the audio
-  // element on iOS so later async .play() calls are permitted.
-  ttsAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-  ttsAudio.play().catch(() => {});
+/* ─────────────── TTS ─────────────── */
+function speak(text, toLang) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang  = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  u.rate  = 0.88;
+  u.pitch = 1;
+  window.speechSynthesis.speak(u);
 }
 
-function speak(text, lang) {
-  // lang is the SPOKEN language of the translated output, e.g. 'en-US'
-  if (isIOS) {
-    ttsAudio.src = 'https://translate.google.com/translate_tts?ie=UTF-8&q='
-      + encodeURIComponent(text) + '&tl=' + lang + '&client=tw-ob';
-    ttsAudio.play().catch(() => {});
-  } else {
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = lang; u.rate = 0.88; u.pitch = 1;
-    window.speechSynthesis.speak(u);
-  }
-}
-
-/* ── Process (translate + speak) ── */
-async function process(lang) {
-  if (!busy) return;   // guard against double calls
-  busy = false;
-
-  const text = transcript.trim()
-    || document.getElementById('heard-' + lang).textContent.trim();
-  if (!text) { setDot(lang, ''); return; }
-
-  setDot(lang, 'translating');
-  try {
-    const translated = await doTranslate(text, lang);
-    document.getElementById('result-' + lang).textContent = translated;
-    setDot(lang, 'speaking');
-    speak(translated, lang === 'zh' ? 'en-US' : 'zh-CN');
-    setTimeout(() => setDot(lang, ''), 4000);
-  } catch (_) {
-    setDot(lang, '');
-  }
-}
-
-/* ── Recording ── */
+/* ─────────────── Recording ─────────────── */
 function startRec(lang, e) {
   if (e) e.preventDefault();
-  if (busy || !SR) {
-    if (!SR) showToast('请用 Chrome 浏览器打开\nPlease open in Chrome browser');
+  if (busy) return;
+  if (!SR) {
+    showToast('请用 Chrome 浏览器打开\nPlease open in Chrome browser');
     return;
   }
 
   busy = true;
-  transcript = '';
-
-  if (isIOS) activateAudio();   // unlock audio element during gesture
-  else window.speechSynthesis.cancel();  // stop any previous speech on desktop
+  finalTranscript = '';
+  window.speechSynthesis.cancel();
 
   clearZone(lang === 'zh' ? 'en' : 'zh');
 
@@ -336,66 +303,72 @@ function startRec(lang, e) {
 
   rec = new SR();
   rec.lang = lang === 'zh' ? 'zh-CN' : 'en-US';
-  rec.continuous = true;
+  rec.continuous     = true;
   rec.interimResults = true;
 
-  rec.onresult = ev => {
+  rec.onresult = (ev) => {
     let interim = '';
     for (let i = ev.resultIndex; i < ev.results.length; i++) {
       const t = ev.results[i][0].transcript;
-      if (ev.results[i].isFinal) transcript += t; else interim += t;
+      if (ev.results[i].isFinal) finalTranscript += t;
+      else interim += t;
     }
-    document.getElementById('heard-' + lang).textContent = transcript + interim;
+    document.getElementById('heard-' + lang).textContent = finalTranscript + interim;
   };
 
-  rec.onerror = ev => {
-    if (ev.error === 'not-allowed')
+  rec.onerror = (ev) => {
+    if (ev.error === 'not-allowed') {
       showToast('请允许麦克风权限\nPlease allow microphone access');
-    busy = false;
-    document.getElementById('btn-' + lang).classList.remove('active');
-    setDot(lang, '');
-    rec = null;
-  };
-
-  // iOS auto-stops recognition before the user lifts their finger.
-  // On desktop we never rely on onend — stopRec() calls process() directly.
-  if (isIOS) rec.onend = () => {
-    document.getElementById('btn-' + lang).classList.remove('active');
-    rec = null;
-    process(lang);
+    }
+    stopRec(lang, null);
   };
 
   try { rec.start(); }
-  catch (_) {
-    busy = false;
-    document.getElementById('btn-' + lang).classList.remove('active');
-    setDot(lang, '');
-  }
+  catch (err) { console.error(err); busy = false; btn.classList.remove('active'); setDot(lang,''); }
 }
 
-function stopRec(lang, e) {
+async function stopRec(lang, e) {
   if (e) e.preventDefault();
   if (!busy) return;
 
-  document.getElementById('btn-' + lang).classList.remove('active');
-  if (rec) { try { rec.stop(); } catch (_) {} rec = null; }
+  const btn = document.getElementById('btn-' + lang);
+  btn.classList.remove('active');
 
-  if (!isIOS) process(lang);
-  // On iOS, rec.onend already calls process(lang).
-  // If the user releases before iOS fires onend, rec.stop() above
-  // will trigger onend which then calls process().
+  if (rec) { try { rec.stop(); } catch(_){} rec = null; }
+
+  const spokenText = finalTranscript.trim() || document.getElementById('heard-' + lang).textContent.trim();
+
+  if (!spokenText) {
+    setDot(lang, '');
+    busy = false;
+    return;
+  }
+
+  setDot(lang, 'translating');
+  const translated = await doTranslate(spokenText, lang);
+  document.getElementById('result-' + lang).textContent = translated;
+
+  setDot(lang, 'speaking');
+  speak(translated, lang === 'zh' ? 'en' : 'zh');
+
+  setTimeout(() => setDot(lang, ''), 4000);
+  busy = false;
 }
 
-/* ── Events ── */
+/* ─────────────── Bind events ─────────────── */
 ['zh', 'en'].forEach(lang => {
   const btn = document.getElementById('btn-' + lang);
-  btn.addEventListener('touchstart',  e => startRec(lang, e), { passive: false });
-  btn.addEventListener('touchend',    e => stopRec(lang, e),  { passive: false });
-  btn.addEventListener('touchcancel', e => stopRec(lang, e),  { passive: false });
-  btn.addEventListener('mousedown',   e => startRec(lang, e));
-  btn.addEventListener('mouseup',     e => stopRec(lang, e));
-  btn.addEventListener('mouseleave',  e => stopRec(lang, e));
+
+  btn.addEventListener('touchstart', e => startRec(lang, e), { passive: false });
+  btn.addEventListener('touchend',   e => stopRec(lang, e),  { passive: false });
+  btn.addEventListener('touchcancel',e => stopRec(lang, e),  { passive: false });
+
+  btn.addEventListener('mousedown',  e => startRec(lang, e));
+  btn.addEventListener('mouseup',    e => stopRec(lang, e));
+  btn.addEventListener('mouseleave', e => stopRec(lang, e));
 });
+
+/* prevent long-press context menu on mobile */
 document.addEventListener('contextmenu', e => e.preventDefault());
 </script>
 
