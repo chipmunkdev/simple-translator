@@ -232,6 +232,12 @@ let rec = null;
 let busy = false;
 let finalTranscript = '';
 
+// Chrome has a bug where speechSynthesis silently stops working after ~15s.
+// Periodically resuming it keeps it alive.
+if (window.speechSynthesis) {
+  setInterval(() => { window.speechSynthesis.resume(); }, 10000);
+}
+
 /* ─────────────── UI helpers ─────────────── */
 function setDot(lang, state) {
   const dot = document.getElementById('dot-' + lang);
@@ -353,6 +359,7 @@ function startRec(lang, e) {
 async function stopRec(lang, e) {
   if (e) e.preventDefault();
   if (!busy) return;
+  busy = false; // reset immediately so double-calls and errors never leave it stuck
 
   const btn = document.getElementById('btn-' + lang);
   btn.classList.remove('active');
@@ -361,21 +368,19 @@ async function stopRec(lang, e) {
 
   const spokenText = finalTranscript.trim() || document.getElementById('heard-' + lang).textContent.trim();
 
-  if (!spokenText) {
+  if (!spokenText) { setDot(lang, ''); return; }
+
+  try {
+    setDot(lang, 'translating');
+    const translated = await doTranslate(spokenText, lang);
+    document.getElementById('result-' + lang).textContent = translated;
+
+    setDot(lang, 'speaking');
+    speak(translated, lang === 'zh' ? 'en' : 'zh');
+    setTimeout(() => setDot(lang, ''), 4000);
+  } catch(_) {
     setDot(lang, '');
-    busy = false;
-    return;
   }
-
-  setDot(lang, 'translating');
-  const translated = await doTranslate(spokenText, lang);
-  document.getElementById('result-' + lang).textContent = translated;
-
-  setDot(lang, 'speaking');
-  speak(translated, lang === 'zh' ? 'en' : 'zh');
-
-  setTimeout(() => setDot(lang, ''), 4000);
-  busy = false;
 }
 
 /* ─────────────── Bind events ─────────────── */
