@@ -231,11 +231,15 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null;
 let busy = false;
 let finalTranscript = '';
+let activeLang = '';
+const statusTimers = { zh: null, en: null };
+let voicesCache = [];
 
 /* ─────────────── UI helpers ─────────────── */
 function setDot(lang, state) {
   const dot = document.getElementById('dot-' + lang);
   const lbl = document.getElementById('status-' + lang);
+  if (statusTimers[lang]) { clearTimeout(statusTimers[lang]); statusTimers[lang] = null; }
   dot.className = 'status-dot ' + state;
   const labels = {
     zh: { listening:'正在听...', translating:'翻译中...', speaking:'播放中...', '':'' },
@@ -272,11 +276,26 @@ async function doTranslate(text, fromLang) {
 }
 
 /* ─────────────── TTS ─────────────── */
+function cacheVoices() {
+  voicesCache = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+}
+
+function getVoice(toLang) {
+  const prefix  = toLang === 'zh' ? 'zh' : 'en';
+  const exact   = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  return voicesCache.find(v => v.lang === exact)
+      || voicesCache.find(v => v.lang.toLowerCase().startsWith(prefix + '-'))
+      || voicesCache.find(v => v.lang.toLowerCase().startsWith(prefix))
+      || null;
+}
+
 function speak(text, toLang) {
-  if (!window.speechSynthesis) return;
+  if (!window.speechSynthesis || !text) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang  = toLang === 'zh' ? 'zh-CN' : 'en-US';
+  const voice = getVoice(toLang);
+  u.lang  = voice ? voice.lang : (toLang === 'zh' ? 'zh-CN' : 'en-US');
+  u.voice = voice;
   u.rate  = 0.88;
   u.pitch = 1;
   window.speechSynthesis.speak(u);
@@ -292,6 +311,7 @@ function startRec(lang, e) {
   }
 
   busy = true;
+  activeLang = lang;
   finalTranscript = '';
   window.speechSynthesis.cancel();
 
@@ -320,16 +340,19 @@ function startRec(lang, e) {
     if (ev.error === 'not-allowed') {
       showToast('请允许麦克风权限\nPlease allow microphone access');
     }
-    stopRec(lang, null);
+    busy = false;
+    activeLang = '';
+    btn.classList.remove('active');
+    setDot(lang, '');
   };
 
   try { rec.start(); }
-  catch (err) { console.error(err); busy = false; btn.classList.remove('active'); setDot(lang,''); }
+  catch (err) { console.error(err); busy = false; activeLang = ''; btn.classList.remove('active'); setDot(lang,''); }
 }
 
 async function stopRec(lang, e) {
   if (e) e.preventDefault();
-  if (!busy) return;
+  if (!busy || activeLang !== lang) return;
 
   const btn = document.getElementById('btn-' + lang);
   btn.classList.remove('active');
@@ -341,6 +364,7 @@ async function stopRec(lang, e) {
   if (!spokenText) {
     setDot(lang, '');
     busy = false;
+    activeLang = '';
     return;
   }
 
@@ -351,8 +375,9 @@ async function stopRec(lang, e) {
   setDot(lang, 'speaking');
   speak(translated, lang === 'zh' ? 'en' : 'zh');
 
-  setTimeout(() => setDot(lang, ''), 4000);
+  statusTimers[lang] = setTimeout(() => setDot(lang, ''), 4000);
   busy = false;
+  activeLang = '';
 }
 
 /* ─────────────── Bind events ─────────────── */
@@ -368,8 +393,12 @@ async function stopRec(lang, e) {
   btn.addEventListener('mouseleave', e => stopRec(lang, e));
 });
 
-/* prevent long-press context menu on mobile */
 document.addEventListener('contextmenu', e => e.preventDefault());
+
+if (window.speechSynthesis) {
+  cacheVoices();
+  window.speechSynthesis.onvoiceschanged = cacheVoices;
+}
 </script>
 
 </body>
