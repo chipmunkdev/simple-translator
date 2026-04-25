@@ -294,8 +294,8 @@ function speak(text, toLang) {
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   const voice = getVoice(toLang);
-  u.lang  = voice ? voice.lang : (toLang === 'zh' ? 'zh-CN' : 'en-US');
-  u.voice = voice;
+  u.lang = voice ? voice.lang : (toLang === 'zh' ? 'zh-CN' : 'en-US');
+  if (voice) u.voice = voice;
   u.rate  = 0.88;
   u.pitch = 1;
   window.speechSynthesis.speak(u);
